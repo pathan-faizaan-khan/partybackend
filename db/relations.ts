@@ -16,8 +16,6 @@ import {
   roomPlaybackState,
   roomVideoHistory,
   changeRequests,
-  chatMessages,
-  roomReactions,
   roomEvents,
 } from "./schema";
 
@@ -39,8 +37,6 @@ export const roomsRelations = relations(rooms, ({ one, many }) => ({
   videoHistory: many(roomVideoHistory),
   changeRequests: many(changeRequests),
   roleChanges: many(roleChanges),
-  chatMessages: many(chatMessages),
-  reactions: many(roomReactions),
   events: many(roomEvents),
   connections: many(roomConnections),
 }));
@@ -99,20 +95,9 @@ export const changeRequestsRelations = relations(changeRequests, ({ one }) => ({
   }),
 }));
 
-export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
-  room: one(rooms, { fields: [chatMessages.roomId], references: [rooms.id] }),
-  sender: one(users, { fields: [chatMessages.userId], references: [users.id] }),
-  deletedByUser: one(users, {
-    fields: [chatMessages.deletedBy],
-    references: [users.id],
-    relationName: "deletedByUser",
-  }),
-}));
 
-export const roomReactionsRelations = relations(roomReactions, ({ one }) => ({
-  room: one(rooms, { fields: [roomReactions.roomId], references: [rooms.id] }),
-  user: one(users, { fields: [roomReactions.userId], references: [users.id] }),
-}));
+
+
 
 export const roomEventsRelations = relations(roomEvents, ({ one }) => ({
   room: one(rooms, { fields: [roomEvents.roomId], references: [rooms.id] }),

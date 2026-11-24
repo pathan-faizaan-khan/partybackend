@@ -10,12 +10,12 @@
  *  - Role enforcement (rejected events) ........... room_events (outcome + rejection_reason)
  *  - Participants must request changes ............ change_requests
  *  - Basic chat (bonus) ........................... chat_messages
- *  - Reactions on key moments (bonus) ............. room_reactions
  *  - Persistent rooms / scalability (bonus) ....... rooms.is_persistent, room_connections.server_instance_id
  *
  * Identity note: the `userId` in every WebSocket payload is users.id.
  * A person's per-room name and role live on room_participants.
  */
+
 import { sql } from "drizzle-orm";
 import {
     bigint,
@@ -149,8 +149,6 @@ export const rooms = pgTable(
         isPersistent: boolean("is_persistent").notNull().default(false),
         /** Scalability target: 50+ users per room. */
         maxParticipants: integer("max_participants").notNull().default(100),
-        chatEnabled: boolean("chat_enabled").notNull().default(true),
-        reactionsEnabled: boolean("reactions_enabled").notNull().default(true),
         /** agents.md: moderators "may optionally manage roles/participants if you choose". */
         moderatorsCanManage: boolean("moderators_can_manage").notNull().default(false),
         lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
@@ -335,45 +333,8 @@ export const changeRequests = pgTable(
     ],
 );
 
-/* ───────────────────────────── Chat & reactions (bonus) ───────────────────────────── */
 
-export const chatMessages = pgTable(
-    "chat_messages",
-    {
-        id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-        roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),
-        userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
-        /** Snapshot, so history still reads correctly after a rename or leave. */
-        username: varchar("username", { length: 50 }).notNull(),
-        body: text("body").notNull(),
-        deletedAt: timestamp("deleted_at", { withTimezone: true }),
-        deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
-        createdAt: createdAt(),
-    },
-    (t) => [
-        check("chat_messages_body_length", sql`char_length(${t.body}) BETWEEN 1 AND 2000`),
-        index("chat_messages_room_idx").on(t.roomId, t.id),
-    ],
-);
 
-/** Emoji reactions, optionally pinned to a moment in the video. */
-export const roomReactions = pgTable(
-    "room_reactions",
-    {
-        id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-        roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),
-        userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
-        emoji: varchar("emoji", { length: 16 }).notNull(),
-        videoId: varchar("video_id", { length: 11 }),
-        videoTimeSeconds: doublePrecision("video_time_seconds"),
-        createdAt: createdAt(),
-    },
-    (t) => [
-        check("room_reactions_time_non_negative", sql`${t.videoTimeSeconds} IS NULL OR ${t.videoTimeSeconds} >= 0`),
-        index("room_reactions_room_idx").on(t.roomId, t.createdAt),
-        index("room_reactions_moment_idx").on(t.roomId, t.videoId, t.videoTimeSeconds),
-    ],
-);
 
 /* ─────────────────────────────── Audit / event log ─────────────────────────────── */
 
@@ -418,6 +379,4 @@ export type RoomConnection = typeof roomConnections.$inferSelect;
 export type RoomPlaybackState = typeof roomPlaybackState.$inferSelect;
 export type RoomVideoHistory = typeof roomVideoHistory.$inferSelect;
 export type ChangeRequest = typeof changeRequests.$inferSelect;
-export type ChatMessage = typeof chatMessages.$inferSelect;
-export type RoomReaction = typeof roomReactions.$inferSelect;
 export type RoomEvent = typeof roomEvents.$inferSelect;

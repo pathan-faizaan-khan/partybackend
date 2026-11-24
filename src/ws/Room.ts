@@ -154,34 +154,7 @@ export class Room {
     }
   }
 
-  public async addChatMessage(userId: string, username: string, body: string): Promise<ChatMessageData> {
-    const cleanBody = body.trim().slice(0, 500);
 
-    const [msg] = await db
-      .insert(chatMessages)
-      .values({
-        roomId: this.id,
-        userId,
-        username,
-        body: cleanBody,
-      })
-      .returning();
-
-    if (!msg) {
-      throw new Error("Failed to save chat message");
-    }
-
-    const data: ChatMessageData = {
-      id: String(msg.id),
-      userId,
-      username,
-      body: cleanBody,
-      createdAt: msg.createdAt.getTime(),
-    };
-
-    this.broadcast("chat_message", data);
-    return data;
-  }
 
   public sendReaction(userId: string, emoji: string): void {
     const id = Math.random().toString(36).slice(2, 10);
@@ -189,17 +162,6 @@ export class Room {
     const data = { id, emoji, x, userId };
 
     this.broadcast("reaction", data);
-
-    // Persist to DB asynchronously
-    db.insert(roomReactions)
-      .values({
-        roomId: this.id,
-        userId,
-        emoji,
-        videoId: this.videoId,
-        videoTimeSeconds: this.calculateCurrentTime(),
-      })
-      .catch((err) => console.error("Failed to insert reaction in DB:", err));
   }
 
   public async assignRole(targetUserId: string, newRole: RoomRole, actorId: string): Promise<void> {
@@ -234,7 +196,7 @@ export class Room {
       changedBy: actorId,
       toRole: newRole,
       reason: newRole === "host" ? "host_transferred" : "assigned",
-    }).catch(() => {});
+    }).catch(() => { });
 
     this.broadcast("role_assigned", {
       userId: targetUserId,
@@ -262,7 +224,7 @@ export class Room {
       })
       .where(eq(roomPlaybackState.roomId, this.id));
 
-    await this.logEvent(actorId, "room_closed", "accepted").catch(() => {});
+    await this.logEvent(actorId, "room_closed", "accepted").catch(() => { });
     this.broadcast("room_closed", { message: "The host has ended the watch party." });
 
     for (const p of this.participants.values()) {
@@ -401,19 +363,21 @@ export class Room {
     }
   }
 
-  public async getRecentMessages(): Promise<ChatMessageData[]> {
-    const msgs = await db.query.chatMessages.findMany({
-      where: eq(chatMessages.roomId, this.id),
-      orderBy: [desc(chatMessages.id)],
-      limit: 50,
-    });
+  public async addChatMessage(userId: string, username: string, body: string): Promise<ChatMessageData> {
+    const cleanBody = body.trim().slice(0, 500);
+    const data: ChatMessageData = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      userId,
+      username,
+      body: cleanBody,
+      createdAt: Date.now(),
+    };
 
-    return msgs.reverse().map((m) => ({
-      id: String(m.id),
-      userId: m.userId ?? "",
-      username: m.username,
-      body: m.body,
-      createdAt: m.createdAt.getTime(),
-    }));
+    this.broadcast("chat_message", data);
+    return data;
+  }
+
+  public async getRecentMessages(): Promise<ChatMessageData[]> {
+    return [];
   }
 }

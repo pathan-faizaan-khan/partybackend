@@ -127,7 +127,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
           .update(roomParticipants)
           .set({ isOnline: true, lastSeenAt: new Date() })
           .where(and(eq(roomParticipants.roomId, room.id), eq(roomParticipants.userId, participant.userId)))
-          .catch(() => {});
+          .catch(() => { });
 
         // Log connection in DB
         const socketId = Math.random().toString(36).slice(2, 12);
@@ -139,14 +139,13 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
             socketId,
             connectedAt: new Date(),
           })
-          .catch(() => {});
+          .catch(() => { });
 
         // 1. Send full room state snapshot to the connecting user
-        const recentMessages = await room.getRecentMessages();
         participant.send("room_state", {
           playback: room.getSyncState(),
           members: room.getParticipantsList(),
-          messages: recentMessages,
+          messages: [],
           requests: Array.from(room.requests.values()),
         });
 
@@ -164,7 +163,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
         // 3. Immediately send current sync state to new joiner
         participant.send("sync_state", room.getSyncState());
 
-        await room.logEvent(participant.userId, "join_room", "accepted").catch(() => {});
+        await room.logEvent(participant.userId, "join_room", "accepted").catch(() => { });
         console.log(`[WS] ${participant.username} (${participant.role}) joined room ${room.code}. Total: ${room.participants.size}`);
       } catch (err: any) {
         console.error("WebSocket join room error:", err);
@@ -314,7 +313,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
             if (body && typeof body === "string") {
               const trimmed = body.trim().slice(0, 500);
               if (trimmed.length > 0) {
-                await room.addChatMessage(participant.userId, participant.username, trimmed);
+                room.addChatMessage(participant.userId, participant.username, trimmed);
               }
             }
             break;
@@ -365,7 +364,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
           case "leave_room": {
             const transferHost = Boolean(msg.payload?.transferHost);
             if (participant.role === "host" && transferHost) {
-              await room.handleHostLeave(participant.userId).catch(() => {});
+              await room.handleHostLeave(participant.userId).catch(() => { });
             }
             ws.close(1000, "Left room");
             break;
@@ -392,7 +391,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
             .update(roomParticipants)
             .set({ isOnline: false, lastSeenAt: new Date() })
             .where(and(eq(roomParticipants.roomId, room.id), eq(roomParticipants.userId, leavingUserId)))
-            .catch(() => {});
+            .catch(() => { });
 
           // Debounce user_left broadcast by 3.5 seconds:
           // If the user simply refreshed the page or had a transient socket reconnect,
@@ -409,7 +408,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
             }
           }, 3500);
 
-          await room.logEvent(leavingUserId, "leave_room", "accepted").catch(() => {});
+          await room.logEvent(leavingUserId, "leave_room", "accepted").catch(() => { });
           console.log(`[WS] ${leavingUsername} disconnected from room ${room.code}. Remaining: ${room.participants.size}`);
         }
       }
