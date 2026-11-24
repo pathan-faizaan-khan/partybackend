@@ -108,6 +108,12 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
 
         const wasAlreadyInRoom = room.participants.has(member.userId);
 
+        room.clearEmptyRoomTimer();
+
+        if (member.role == "host") {
+          room.clearEmptyRoomTimer();
+        }
+
         participant = new Participant({
           userId: member.userId,
           username: member.username,
@@ -121,6 +127,11 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
         currentRoomCode = room.code;
         room.addParticipant(participant);
         hasJoined = true;
+
+        room.clearEmptyRoomTimer();
+        if (participant.role === "host") {
+          room.clearHostDisconnectTimer();
+        }
 
         // Update DB presence
         await db
@@ -386,6 +397,19 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
 
           room.removeParticipant(leavingUserId);
 
+          if (leavingRole == "host") {
+            room.startHostDisconnectTimer(async () => {
+              await room.closeRoom("system", "Room closed: Host disconnected");
+              roomManager.removeRoom(room.code);
+            });
+          }
+
+          if (room.participants.size === 0) {
+            room.startEmptyRoomTimer(async () => {
+              await room.closeRoom("system", "Room closed: No participants left");
+              roomManager.removeRoom(room.code);
+            })
+          }
           // Update DB presence
           await db
             .update(roomParticipants)
@@ -407,9 +431,6 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
               });
             }
           }, 3500);
-
-          await room.logEvent(leavingUserId, "leave_room", "accepted").catch(() => { });
-          console.log(`[WS] ${leavingUsername} disconnected from room ${room.code}. Remaining: ${room.participants.size}`);
         }
       }
     });

@@ -4,8 +4,6 @@ import {
   roomPlaybackState,
   roomVideoHistory,
   roomEvents,
-  chatMessages,
-  roomReactions,
   changeRequests,
   roomParticipants,
   roleChanges,
@@ -35,6 +33,8 @@ export class Room {
   public currentTime: number = 0;
   public stateUpdatedAt: number = Date.now();
   public version: number = 0;
+  private hostDisconnectTimeout: NodeJS.Timeout | null = null;
+  private emptyRoomTimeout: NodeJS.Timeout | null = null;
 
   constructor(opts: {
     id: string;
@@ -62,6 +62,52 @@ export class Room {
       return Math.max(0, this.currentTime + elapsed);
     }
     return this.currentTime;
+  }
+
+  public startHostDisconnectTimer(onTimeout: () => void): void {
+    if (this.hostDisconnectTimeout) {
+      return;
+    }
+
+    this.broadcast("host_offline_warning", {
+      message: "The host has disconnected. The party will close in 5 minutes if the host does not return.",
+      timeoutSeconds: 300,
+    });
+
+    this.hostDisconnectTimeout = setTimeout(() => {
+      console.log(`[Room ${this.code}] Host failed to return within 5 minutes. Closing room.`);
+      onTimeout();
+    }, 5 * 60 * 1000);
+  }
+
+  public clearHostDisconnectTimer(): void {
+    if (this.hostDisconnectTimeout) {
+      clearTimeout(this.hostDisconnectTimeout);
+      this.hostDisconnectTimeout = null;
+      this.broadcast("host_reconnected", {
+        message: "The host has reconnected."
+      });
+    }
+  }
+
+  public startEmptyRoomTimer(onTimeout: () => void): void {
+    if (this.emptyRoomTimeout) {
+      return;
+    }
+
+    this.emptyRoomTimeout = setTimeout(() => {
+      if (this.participants.size == 0) {
+        console.log(`[Room ${this.code}] Room is empty. Closing room.`);
+        onTimeout();
+      }
+    }, 60 * 1000);
+  }
+
+  public clearEmptyRoomTimer(): void {
+    if (this.emptyRoomTimeout) {
+      clearTimeout(this.emptyRoomTimeout);
+      this.emptyRoomTimeout = null;
+    }
   }
 
   public getSyncState(): PlaybackState {
@@ -206,7 +252,7 @@ export class Room {
     });
   }
 
-  public async closeRoom(actorId: string): Promise<void> {
+  public async closeRoom(actorId: string, customMessage?: string): Promise<void> {
     await db
       .update(rooms)
       .set({
@@ -224,8 +270,13 @@ export class Room {
       })
       .where(eq(roomPlaybackState.roomId, this.id));
 
+    this.clearHostDisconnectTimer();
+    this.clearEmptyRoomTimer();
+
+    const message = customMessage || "The party has ended.";
+    this.broadcast("room_closed", { message });
+
     await this.logEvent(actorId, "room_closed", "accepted").catch(() => { });
-    this.broadcast("room_closed", { message: "The host has ended the watch party." });
 
     for (const p of this.participants.values()) {
       p.close(4000, "Room ended by host");
@@ -234,19 +285,6 @@ export class Room {
   }
 
   public async handleHostLeave(leavingUserId: string): Promise<void> {
-    const remaining = Array.from(this.participants.values()).filter((p) => p.userId !== leavingUserId);
-    if (remaining.length > 0) {
-      const nextHost = remaining.find((p) => p.role === "moderator") || remaining[0];
-      if (nextHost) {
-        await this.assignRole(nextHost.userId, "host", leavingUserId);
-        this.broadcast("host_transferred", {
-          newHostId: nextHost.userId,
-          newHostUsername: nextHost.username,
-          message: `${nextHost.username} is now the host.`,
-          participants: this.getParticipantsList(),
-        });
-      }
-    }
   }
 
   public async removeUser(targetUserId: string, actorId: string): Promise<void> {
